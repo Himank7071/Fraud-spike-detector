@@ -68,16 +68,16 @@ def main():
     print(f"\nscale_pos_weight = {spw:.2f}")
 
     model = xgb.XGBClassifier(
-        n_estimators=2000,          # upper bound; early stopping picks the real number
+        n_estimators=1000,          # upper bound; early stopping picks the real number
         max_depth=6,
-        learning_rate=0.05,
+        learning_rate=0.1,
         subsample=0.8,              # each tree sees 80% of rows  ) both reduce
         colsample_bytree=0.8,       # each tree sees 80% of cols  ) overfitting
         min_child_weight=5,
         reg_lambda=1.0,
         scale_pos_weight=spw,
         eval_metric="aucpr",        # optimise precision-recall, not accuracy
-        early_stopping_rounds=100,
+        early_stopping_rounds=50,
         tree_method="hist",         # fast histogram algorithm
         n_jobs=-1,
         random_state=SEED,
