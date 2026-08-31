@@ -1,0 +1,19 @@
+# Dataset — 1.3 GB, downloaded from Kaggle, never committed
+IEEE CIS Fraud Detection/
+
+# Generated artifacts — all reproducible by rerunning src/
+artifacts/*
+!artifacts/.gitkeep
+!artifacts/xgb_metrics.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime
+*.db
+*.sqlite3
+
+# macOS
+.DS_Store
