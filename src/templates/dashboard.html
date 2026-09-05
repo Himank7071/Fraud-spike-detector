@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FraudGuard — Live Monitor</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:      #f9f9f7;
+    --surface:   #fcfcfb;
+    --ink:       #0b0b0b;
+    --ink-2:     #52514e;
+    --ink-muted: #898781;
+    --grid:      #e1e0d9;
+    --border:    rgba(11,11,11,0.10);
+    --good:      #0ca30c;
+    --warning:   #fab219;
+    --critical:  #d03b3b;
+    --blue:      #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:      #0d0d0d;
+      --surface:   #1a1a19;
+      --ink:       #ffffff;
+      --ink-2:     #c3c2b7;
+      --ink-muted: #898781;
+      --grid:      #2c2c2a;
+      --border:    rgba(255,255,255,0.10);
+      --good:      #0ca30c;
+      --warning:   #fab219;
+      --critical:  #e66767;
+      --blue:      #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 20px 28px 12px; flex-wrap: wrap; gap: 8px;
+  }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header .tag {
+    color: var(--ink-muted); font-size: 12.5px; margin-left: 10px;
+  }
+  header .controls { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit; border: 1px solid var(--border); background: var(--surface);
+    color: var(--ink); padding: 7px 12px; border-radius: 7px; cursor: pointer;
+  }
+  button:hover { border-color: var(--ink-muted); }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button.approve { color: var(--good); border-color: var(--good); }
+  button.reject { color: var(--critical); border-color: var(--critical); }
+
+  #spike-banner {
+    display: none; margin: 0 28px 4px; padding: 12px 16px; border-radius: 9px;
+    background: color-mix(in srgb, var(--critical) 14%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--critical) 45%, var(--border));
+    color: var(--ink); font-weight: 600; align-items: center; gap: 8px;
+  }
+  #spike-banner .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--critical);
+    display: inline-block; animation: pulse 1.1s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .kpis {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+    margin: 8px 28px 4px;
+  }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .kpi .label { font-size: 11.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 22px; font-weight: 650; margin-top: 3px; }
+  .kpi .sub { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+
+  .mix {
+    margin: 10px 28px 4px; height: 10px; border-radius: 6px; overflow: hidden;
+    display: flex; border: 1px solid var(--border);
+  }
+  .mix div { height: 100%; }
+  .mix-legend {
+    margin: 0 28px 10px; display: flex; gap: 16px; font-size: 12px; color: var(--ink-2);
+  }
+  .mix-legend span { display:inline-flex; align-items:center; gap:5px; }
+  .mix-legend i { width:8px; height:8px; border-radius:2px; display:inline-block; }
+
+  main {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 14px;
+    margin: 6px 28px 28px; align-items: start;
+  }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden;
+  }
+  .panel h2 {
+    font-size: 13px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--grid);
+    color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; font-weight: 650;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12.8px; }
+  thead th {
+    text-align: left; padding: 8px 12px; color: var(--ink-muted); font-weight: 600;
+    border-bottom: 1px solid var(--grid); font-size: 11.5px; text-transform: uppercase;
+  }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.detail-row { cursor: pointer; }
+  tbody tr.detail-row:hover { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+  tbody tr.synthetic td:first-child { border-left: 3px solid var(--blue); }
+  .feed-wrap { max-height: 560px; overflow-y: auto; }
+  .amt { font-variant-numeric: tabular-nums; }
+  .score { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+    border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap;
+  }
+  .badge i { width: 7px; height: 7px; border-radius: 50%; display:inline-block; }
+  .badge.BLOCK { color: var(--critical); background: color-mix(in srgb, var(--critical) 14%, transparent); }
+  .badge.BLOCK i { background: var(--critical); }
+  .badge.MANUAL_REVIEW { color: #9a6b00; background: color-mix(in srgb, var(--warning) 25%, transparent); }
+  .badge.MANUAL_REVIEW i { background: var(--warning); }
+  .badge.ALLOW { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .badge.ALLOW i { background: var(--good); }
+  .badge.spike { color: var(--critical); background: color-mix(in srgb, var(--critical) 14%, transparent); }
+
+  .reason { color: var(--ink-2); max-width: 420px; }
+  .empty { padding: 24px 16px; color: var(--ink-muted); text-align: center; font-size: 13px; }
+
+  .queue-item { padding: 10px 16px; border-bottom: 1px solid var(--grid); }
+  .queue-item:last-child { border-bottom: none; }
+  .queue-item .row1 { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; }
+  .queue-item .reason { font-size: 12px; margin-bottom: 8px; }
+  .queue-item .actions { display: flex; gap: 6px; }
+  .queue-item .actions button { padding: 4px 10px; font-size: 12px; }
+
+  .alert-item { padding: 9px 16px; border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-item .t { color: var(--ink-muted); font-size: 11px; }
+
+  #detail-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    align-items: center; justify-content: center; z-index: 10;
+  }
+  #detail-modal .box {
+    background: var(--surface); border-radius: 12px; padding: 20px 22px; width: 460px;
+    max-width: 90vw; border: 1px solid var(--border);
+  }
+  #detail-modal h3 { margin: 0 0 4px; font-size: 15px; }
+  #detail-modal .meta { color: var(--ink-muted); font-size: 12px; margin-bottom: 14px; }
+  .shap-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 12.8px; }
+  .shap-bar-track { flex: 1; height: 8px; background: var(--grid); border-radius: 4px; position: relative; }
+  .shap-bar-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+  .shap-val { width: 56px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  #detail-modal .close { margin-top: 14px; width: 100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>FraudGuard <span class="tag">live transaction monitor — held-out metrics + real-time scoring</span></h1>
+  </div>
+  <div class="controls">
+    <span id="conn" class="tag">connecting…</span>
+    <button id="reset-btn">Reset demo</button>
+  </div>
+</header>
+
+<div id="spike-banner"><span class="dot"></span> <span id="spike-text"></span></div>
+
+<div class="kpis" id="kpis"></div>
+<div class="mix" id="mix"></div>
+<div class="mix-legend">
+  <span><i style="background:var(--good)"></i>Allow</span>
+  <span><i style="background:var(--warning)"></i>Manual review</span>
+  <span><i style="background:var(--critical)"></i>Block</span>
+</div>
+
+<main>
+  <section class="panel">
+    <h2>Live feed</h2>
+    <div class="feed-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Transaction</th><th>Amount</th><th>Card</th>
+          <th>Score</th><th>Decision</th><th>Reason (top SHAP)</th>
+        </tr></thead>
+        <tbody id="feed-body"></tbody>
+      </table>
+      <div id="feed-empty" class="empty">No transactions scored yet. Start the replay script to stream the demo feed.</div>
+    </div>
+  </section>
+
+  <div style="display:flex; flex-direction:column; gap:14px;">
+    <section class="panel">
+      <h2>Manual review queue</h2>
+      <div id="queue-body"></div>
+      <div id="queue-empty" class="empty">Queue is empty.</div>
+    </section>
+    <section class="panel">
+      <h2>Spike alerts</h2>
+      <div id="alerts-body"></div>
+      <div id="alerts-empty" class="empty">No aggregate spikes detected.</div>
+    </section>
+  </div>
+</main>
+
+<div id="detail-modal">
+  <div class="box">
+    <h3 id="dm-title"></h3>
+    <div class="meta" id="dm-meta"></div>
+    <div id="dm-shap"></div>
+    <button class="close" id="dm-close">Close</button>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let feedRows = {};
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], {hour12:false});
+}
+function fmtInr(n) {
+  return '₹' + Number(n).toLocaleString('en-IN', {maximumFractionDigits:0});
+}
+function pct(n) { return (n*100).toFixed(1) + '%'; }
+
+async function loadMetrics() {
+  const r = await fetch('/api/metrics');
+  const m = await r.json();
+  const h = m.headline;
+  $('kpis').innerHTML = `
+    <div class="kpi"><div class="label">Precision</div><div class="value">${pct(h.precision)}</div><div class="sub">@ threshold ${h.threshold}</div></div>
+    <div class="kpi"><div class="label">Recall</div><div class="value">${pct(h.recall)}</div><div class="sub">fraud caught</div></div>
+    <div class="kpi"><div class="label">F1</div><div class="value">${h.f1.toFixed(3)}</div></div>
+    <div class="kpi"><div class="label">AUC-PR</div><div class="value">${h.auc_pr.toFixed(3)}</div><div class="sub">headline metric</div></div>
+    <div class="kpi"><div class="label">ROC-AUC</div><div class="value">${h.roc_auc.toFixed(3)}</div><div class="sub">reported for comparability</div></div>
+    <div class="kpi"><div class="label">FP cost, held-out</div><div class="value">${fmtInr(h.false_positive_cost_inr)}</div><div class="sub">${h.fp.toLocaleString()} legit txns blocked</div></div>
+  `;
+}
+
+async function loadSummary() {
+  const r = await fetch('/api/summary');
+  const s = await r.json();
+  const n = s.n || 0;
+  const nb = s.n_block || 0, nr = s.n_review || 0, na = s.n_allow || 0;
+  const total = Math.max(n, 1);
+  $('mix').innerHTML = `
+    <div style="width:${100*na/total}%; background:var(--good)"></div>
+    <div style="width:${100*nr/total}%; background:var(--warning)"></div>
+    <div style="width:${100*nb/total}%; background:var(--critical)"></div>
+  `;
+}
+
+function badgeHtml(decision) {
+  return `<span class="badge ${decision}"><i></i>${decision.replace('_',' ')}</span>`;
+}
+
+async function loadFeed() {
+  const r = await fetch('/api/feed?limit=60');
+  const rows = await r.json();
+  $('feed-empty').style.display = rows.length ? 'none' : 'block';
+  feedRows = {};
+  $('feed-body').innerHTML = rows.map(row => {
+    feedRows[row.id] = row;
+    const spikeTag = row.spike_alert ? `<span class="badge spike" style="margin-left:6px">⚡ spike</span>` : '';
+    const synCls = row.is_synthetic ? 'synthetic' : '';
+    return `<tr class="detail-row ${synCls}" data-id="${row.id}">
+      <td>${fmtTime(row.logged_at)}</td>
+      <td>${row.transaction_id}${row.is_synthetic ? ' <span class="tag" style="color:var(--blue)">synthetic</span>' : ''}</td>
+      <td class="amt">${fmtInr(row.amount || 0)}</td>
+      <td>${row.card1 ?? '—'}</td>
+      <td class="score">${Number(row.score).toFixed(3)}</td>
+      <td>${badgeHtml(row.decision)}${spikeTag}</td>
+      <td class="reason">${row.reason || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadQueue() {
+  const r = await fetch('/api/queue');
+  const rows = await r.json();
+  $('queue-empty').style.display = rows.length ? 'none' : 'block';
+  $('queue-body').innerHTML = rows.map(row => `
+    <div class="queue-item">
+      <div class="row1"><strong>${row.transaction_id}</strong><span>${fmtInr(row.amount||0)} · score ${Number(row.score).toFixed(3)}</span></div>
+      <div class="reason">${row.reason || ''}</div>
+      <div class="actions">
+        <button class="approve" onclick="resolveQueue(${row.id}, 'approved')">Approve</button>
+        <button class="reject" onclick="resolveQueue(${row.id}, 'rejected')">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+async function resolveQueue(id, status) {
+  await fetch(`/api/queue/${id}/resolve`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  loadQueue(); loadFeed();
+}
+
+async function loadAlerts() {
+  const r = await fetch('/api/spikes');
+  const rows = await r.json();
+  $('alerts-empty').style.display = rows.length ? 'none' : 'block';
+  $('alerts-body').innerHTML = rows.map(a => `
+    <div class="alert-item">
+      <div>⚡ <strong>card1 = ${a.entity_key}</strong> — ${a.count} risky transactions inside ${a.window_seconds}s</div>
+      <div class="t">${fmtTime(a.logged_at)}</div>
+    </div>`).join('');
+
+  if (rows.length) {
+    $('spike-banner').style.display = 'flex';
+    const a = rows[0];
+    $('spike-text').textContent =
+      `Active spike: card1 = ${a.entity_key} fired ${a.count} risky transactions within ${a.window_seconds}s — investigate this card.`;
+  } else {
+    $('spike-banner').style.display = 'none';
+  }
+}
+
+function shapBarHtml(f) {
+  const w = Math.min(100, Math.abs(f.shap_value) * 220);
+  const color = f.shap_value > 0 ? 'var(--critical)' : 'var(--good)';
+  const side = f.shap_value > 0 ? 'left:50%;' : `right:50%;`;
+  return `<div class="shap-row">
+    <div style="width:150px">${f.feature}</div>
+    <div class="shap-bar-track">
+      <div class="shap-bar-fill" style="${side} width:${w/2}%; background:${color}"></div>
+    </div>
+    <div class="shap-val">${f.shap_value.toFixed(3)}</div>
+  </div>`;
+}
+
+$('feed-body').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-id]');
+  if (!tr) return;
+  const row = feedRows[tr.dataset.id];
+  if (!row) return;
+  $('dm-title').textContent = `${row.transaction_id} — ${row.decision.replace('_',' ')}`;
+  $('dm-meta').textContent = `score ${Number(row.score).toFixed(3)} · ${fmtInr(row.amount||0)} · card1 ${row.card1 ?? '—'}`;
+  const feats = JSON.parse(row.top_features || '[]');
+  $('dm-shap').innerHTML = feats.map(shapBarHtml).join('') ||
+    '<div class="empty">No SHAP breakdown available.</div>';
+  $('detail-modal').style.display = 'flex';
+});
+$('dm-close').onclick = () => $('detail-modal').style.display = 'none';
+$('detail-modal').addEventListener('click', (e) => { if (e.target.id === 'detail-modal') e.currentTarget.style.display = 'none'; });
+
+$('reset-btn').onclick = async () => {
+  if (!confirm('Reset the audit trail and spike detector for a clean demo run?')) return;
+  await fetch('/api/reset', {method:'POST'});
+  loadAll();
+};
+
+async function loadAll() {
+  try {
+    await Promise.all([loadSummary(), loadFeed(), loadQueue(), loadAlerts()]);
+    $('conn').textContent = 'live · polling every 1.5s';
+  } catch (e) {
+    $('conn').textContent = 'connection error';
+  }
+}
+
+loadMetrics();
+loadAll();
+setInterval(loadAll, 1500);
+</script>
+</body>
+</html>

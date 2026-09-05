@@ -83,23 +83,34 @@ def load_meta():
 
 
 def transform(df, meta=None):
-    """Apply the fitted pipeline. Works on a full frame or a single row."""
+    """Apply the fitted pipeline. Works on a full frame or a single row.
+
+    Built as one dict-of-columns -> single DataFrame construction rather than
+    ~440 sequential `X[c] = ...` inserts. The row-by-row version is not just
+    slow -- it fragments the block manager badly enough that pandas warns on
+    nearly every insert -- and this function is now also the hot path the
+    live Flask API calls once per incoming transaction, where that overhead
+    is no longer a one-off training cost.
+    """
     meta = meta or load_meta()
     df = engineer(df)
 
     # Any column the model expects but this frame lacks (common for a live
     # transaction posted with partial fields) becomes NaN, not an error.
-    for c in meta["feature_names"]:
-        if c not in df.columns:
-            df[c] = np.nan
+    missing = [c for c in meta["feature_names"] if c not in df.columns]
+    if missing:
+        df = pd.concat(
+            [df, pd.DataFrame(np.nan, index=df.index, columns=missing)], axis=1
+        )
 
-    X = pd.DataFrame(index=df.index)
+    cols = {}
     for c in meta["num_cols"]:
-        X[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
+        cols[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
     for c in meta["cat_cols"]:
         # -1 = category never seen during training. NaN stays NaN.
-        X[c] = df[c].astype(object).map(
+        cols[c] = df[c].astype(object).map(
             lambda v: meta["vocab"][c].get(str(v), -1) if pd.notna(v) else np.nan
         ).astype("float32")
 
+    X = pd.DataFrame(cols, index=df.index)
     return X[meta["feature_names"]]
